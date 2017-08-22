@@ -31,3 +31,6 @@ class UtteranceEmbed():
             return np.mean(word_embeddings, axis=0)
         else:
             return np.zeros([self.dim], np.float32)
+        
+    def get_vector_size(self):
+        return self.word2vec_model.vector_size

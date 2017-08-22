@@ -1,4 +1,5 @@
 import os
+from general_utils import get_logger
 
 
 class Config():
@@ -6,10 +7,12 @@ class Config():
         # directory for training outputs
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
+
+        self.logger = get_logger(self.log_path)
         
-    
     output_path = 'results/word2vec_lstm/'
     model_output = output_path + 'model.weights/'
+    log_path = output_path + "log.txt"
     
     lr = 0.001
     lr_decay = 0.9
@@ -19,3 +22,11 @@ class Config():
     
     num_epochs = 15
     batch_size = 10
+    
+    # file name lists for training
+    word2vec_filename = 'dbdc3/data/word2vec/wiki_en_model'
+    
+    train_filename = 'dbdc3/data/train_test_dir/train_dataset'
+    dev_filename = 'dbdc3/data/train_test_dir/dev_dataset'
+    test_filename = 'dbdc3/data/train_test_dir/test_dataset'
+    
