@@ -9,7 +9,6 @@ def main(config):
     data = Data(config.train_filename, config.dev_filename, config.test_filename)
     train_data = data.train_set
     dev_data = data.dev_set
-    test_data = data.test_set
 
     # load word2vec
     utter_embed = UtteranceEmbed('dbdc3/data/word2vec/wiki_en_model')

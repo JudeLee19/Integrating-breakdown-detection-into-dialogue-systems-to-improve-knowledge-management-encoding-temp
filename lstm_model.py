@@ -61,8 +61,9 @@ class LstmModel():
             print('output logits: ',self.logits.shape)
         
     def add_pred_op(self):
-        self.label_probs = tf.nn.softmax(self.logits)
-        self.prediction = tf.arg_max(self.label_probs, dimension=0)
+        self.labels_pred = tf.cast(tf.argmax(self.logits, axis=-1), tf.int32)
+        # self.label_probs = tf.nn.softmax(self.logits)
+        # self.prediction = tf.arg_max(self.label_probs, dimension=0)
     
     def add_loss_op(self):
         losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.ground_label)
@@ -84,7 +85,6 @@ class LstmModel():
     def add_init_op(self):
         self.init = tf.global_variables_initializer()
         
-    
     def add_summary(self, sess):
         self.merged = tf.summary.merge_all()
         self.file_writer = tf.summary.FileWriter(self.config.output_path, sess.graph)
@@ -112,7 +112,7 @@ class LstmModel():
         num_batches = (len(train_data) + self.config.batch_size - 1) // self.config.batch_size
         prog = Progbar(target=num_batches)
 
-        for i, (concat_utter_list, ground_label) in enumerate(minibatches(train_data, self.config.batch_size)):
+        for i, (concat_utter_list, ground_label) in enumerate(minibatches(train_data + dev_data, self.config.batch_size)):
             input_features = []
             for each_utter_list in concat_utter_list:
                 user_sentence = each_utter_list[0]
