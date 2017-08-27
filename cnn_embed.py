@@ -4,7 +4,7 @@ from general_utils import Progbar, print_sentence
 from tensorflow.contrib.layers import xavier_initializer as xav
 from data_process import minibatches
 import joblib
-
+import os
 
 class CnnLstmModel():
     
@@ -100,9 +100,12 @@ class CnnLstmModel():
             num_filters_total = self.num_filters * len(self.filter_sizes)
             self.h_pool = tf.concat(pooled_outputs, 3)
             self.h_pool_flat = tf.reshape(self.h_pool, [-1, num_filters_total])
-            
+            # Add dropout
+            with tf.name_scope("dropout"):
+                self.h_drop = tf.nn.dropout(self.h_pool_flat, self.dropout_keep_prob)
+
             # shape : (20, 384)
-            input_features = tf.reshape(self.h_pool_flat, [10, 384 * 2])
+            input_features = tf.reshape(self.h_drop, [10, 384 * 2])
             self.input_features = tf.expand_dims(input_features, 0)
             
         with tf.variable_scope('lstm'):
@@ -184,7 +187,7 @@ class CnnLstmModel():
         """
 
         :param train_data: contains concatenated sentence(user and system list type) and ground_labels(O, T, X)
-        :return: accuracy and f1 scroe
+        :return: accuracy and f1 score
         """
     
         num_batches = (len(train_data) + self.config.batch_size - 1) // self.config.batch_size
@@ -208,16 +211,13 @@ class CnnLstmModel():
 
             # maybe (20, sequence_length, 300)
             input_x = np.array(input_features)
-            # print('input_x shape')
-            # print(input_x.shape)
-        
         
             ground_label_list = []
             for label in ground_label:
                 ground_label_list.append(self.cate_mapping_dict[label.strip().encode('utf-8')])
             ground_label_list = np.array([ground_label_list])
 
-            dropout_keep_prob = 0.5
+            dropout_keep_prob = 0.8
             
             feed_dict = {
                 self.input_x: input_x,
@@ -230,8 +230,72 @@ class CnnLstmModel():
         
             if i % 10 == 0:
                 self.file_writer.add_summary(summary, epoch * num_batches + i)
-            
+        
+        accuracy, f1_score = self.run_evaluate(sess, test_data[300:])
+        self.logger.info("- dev acc {:04.2f} - f1 {:04.2f}".format(100 * accuracy, 100 * f1_score))
+        return accuracy, f1_score
+        
+    def run_evaluate(self, sess, test_data):
+        # create confusion matrix to evaluate precision and recall
+        confusion_matrix = np.zeros(shape=(3,3))
+        
+        accuracy_list = []
+        for i, (concat_utter_list, ground_label) in enumerate(
+                minibatches(test_data, self.config.batch_size)):
+            input_features = []
+    
+            for each_utter_list in concat_utter_list:
+                user_sentence = each_utter_list[0]
+                system_sentence = each_utter_list[1]
+        
+                user_words_embedding = self.utter_embed.embed_utterance(user_sentence, sequence_length=50,
+                                                                   is_mean=False)
+                system_words_embedding = self.utter_embed.embed_utterance(system_sentence, sequence_length=50,
+                                                                     is_mean=False)
+        
+                input_features.append(np.array(user_words_embedding))
+                input_features.append(np.array(system_words_embedding))
+    
+            input_x = np.array(input_features)
+    
+            ground_label_list = []
+            for label in ground_label:
+                ground_label_list.append(self.cate_mapping_dict[label.strip().encode('utf-8')])
+            ground_label_list = np.array([ground_label_list])
+    
+            feed_dict = {
+                self.input_x: input_x,
+                self.dropout_keep_prob: 1.0
+            }
+    
+            labels_pred = sess.run([self.labels_pred], feed_dict=feed_dict)
 
+            predict_list = list(labels_pred)[0][0]
+            ground_list = ground_label_list[0]
+
+            correct_pred = 0.
+            for pred_ele, ground_ele in zip(predict_list, ground_list):
+                confusion_matrix[pred_ele][ground_ele] += 1
+                if pred_ele == ground_ele:
+                    correct_pred += 1
+                else:
+                    continue
+            accuracy_list.append(correct_pred / len(ground_list))
+        accuracy = np.mean(accuracy_list)
+        
+        tp = 0.
+        fp = 0.
+        fn = 0.
+        for i in range(3):
+            tp += confusion_matrix[i][i]
+            fp += (sum(confusion_matrix[:][i]) - confusion_matrix[i][i])
+            fn += (sum(confusion_matrix[i][:]) - confusion_matrix[i][i])
+        precision = tp / (tp + fp)
+        recall = tp / (tp + fn)
+        f1_score = (2 * precision * recall) / (precision + recall)
+        
+        return accuracy, f1_score
+    
     def train(self, train_data, dev_data, test_data):
         saver = tf.train.Saver()
     
@@ -248,12 +312,24 @@ class CnnLstmModel():
         
             for epoch in range(self.config.num_epochs):
                 self.logger.info("Epoch {:} out of {:}".format(epoch + 1, self.config.num_epochs))
-                # acc, f1 = self.run_epoch(sess, train, dev, ground_labels, utter_embed, epoch)
-                self.run_epoch(sess, train_data, dev_data, test_data, epoch)
+                accuracy, f1_score = self.run_epoch(sess, train_data, dev_data, test_data, epoch)
             
                 # decay learning rate
                 self.config.lr *= self.config.lr_decay
             
-                # need to add early stopping
+                # add for early stopping
+                if f1_score >= best_score:
+                    nepoch_no_imprv = 0
+                    if not os.path.exists(self.config.model_output):
+                        os.makedirs(self.config.model_output)
+                    saver.save(sess, self.config.model_output)
+                    best_score = f1_score
+                    self.logger.info("- new best score!")
+
+                else:
+                    nepoch_no_imprv += 1
+                    if nepoch_no_imprv >= self.config.nepoch_no_imprv:
+                        self.logger.info("- early stopping {} epochs without improvement".format(
+                                        nepoch_no_imprv))
+                        break
         
-            saver.save(sess, self.config.model_output)
