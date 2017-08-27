@@ -10,9 +10,13 @@ class Config():
 
         self.logger = get_logger(self.log_path)
         
-    output_path = 'results/word2vec_lstm_v2/'
-    model_output = output_path + 'model.weights_v2/'
-    log_path = output_path + "log_v2.txt"
+    # output_path = 'results/word2vec_lstm_v4/'
+    # model_output = output_path + 'model.weights_v4/'
+    # log_path = output_path + "log_v4.txt"
+
+    output_path = 'results/word2vec_cnn_v1/'
+    model_output = output_path + 'model.weights_v1/'
+    log_path = output_path + "log_v1.txt"
     
     lr = 0.001
     lr_decay = 0.9
@@ -20,8 +24,11 @@ class Config():
     nepoch_no_imprv = 3
     reload = False
     
-    num_epochs = 20
+    num_epochs = 15
     batch_size = 10
+    
+    # embed_method = 'word2vec'
+    embed_method = 'cnn'
     
     # file name lists for training
     word2vec_filename = 'dbdc3/data/word2vec/wiki_en_model'

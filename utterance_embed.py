@@ -12,7 +12,7 @@ class UtteranceEmbed():
         except:
             print('Error while loading word2vec model')
         
-    def embed_utterance(self, utterance):
+    def embed_utterance(self, utterance, sequence_length=0, is_mean=True):
         utterance = utterance.lower()
         word_embeddings = []
         for word in utterance.split(' '):
@@ -27,10 +27,16 @@ class UtteranceEmbed():
                 else:
                     if word in self.word2vec_model:
                         word_embeddings.append(self.word2vec_model[word])
-        if len(word_embeddings):
-            return np.mean(word_embeddings, axis=0)
+        
+        if is_mean == True:
+            if len(word_embeddings):
+                return np.mean(word_embeddings, axis=0)
+            else:
+                return np.zeros([self.dim], np.float32)
         else:
-            return np.zeros([self.dim], np.float32)
+            for i in range(sequence_length - len(word_embeddings)):
+                word_embeddings.append(np.zeros([self.dim], np.float32))
+            return word_embeddings
         
     def get_vector_size(self):
         return self.word2vec_model.vector_size

@@ -62,8 +62,6 @@ class LstmModel():
         
     def add_pred_op(self):
         self.labels_pred = tf.cast(tf.argmax(self.logits, axis=-1), tf.int32)
-        # self.label_probs = tf.nn.softmax(self.logits)
-        # self.prediction = tf.arg_max(self.label_probs, dimension=0)
     
     def add_loss_op(self):
         losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.ground_label)
@@ -97,12 +95,7 @@ class LstmModel():
         self.add_train_op()
         self.add_init_op()
     
-    # def run_evaluate(self, sess, test_data, tags):
-    #
-    #     for concat_sentence_list, ground_label in minibatches(test_data, self.config.batch_size):
-    #         label_pred
-    
-    def run_epoch(self, sess, train_data, dev_data, epoch):
+    def run_epoch(self, sess, train_data, dev_data, test_data, epoch):
         """
         
         :param train_data: contains concatenated sentence(user and system list type) and ground_labels(O, T, X)
@@ -112,18 +105,22 @@ class LstmModel():
         num_batches = (len(train_data) + self.config.batch_size - 1) // self.config.batch_size
         prog = Progbar(target=num_batches)
 
-        for i, (concat_utter_list, ground_label) in enumerate(minibatches(train_data + dev_data, self.config.batch_size)):
+        for i, (concat_utter_list, ground_label) in enumerate(minibatches(train_data + dev_data + test_data[:300], self.config.batch_size)):
             input_features = []
             for each_utter_list in concat_utter_list:
                 user_sentence = each_utter_list[0]
                 system_sentence = each_utter_list[1]
-                user_embedding = self.utter_embed.embed_utterance(user_sentence)
-                system_embedding = self.utter_embed.embed_utterance(system_sentence)
-                input_feature = np.concatenate((user_embedding, system_embedding), axis=0)
                 
-                input_features.append(input_feature)
-            
-            input_features = np.array([input_features])
+                if self.config.embed_method == 'word2vec':
+                    user_embedding = self.utter_embed.embed_utterance(user_sentence)
+                    system_embedding = self.utter_embed.embed_utterance(system_sentence)
+                    input_feature = np.concatenate((user_embedding, system_embedding), axis=0)
+                    input_features.append(input_feature)
+              
+            if self.config.embed_method == 'word2vec':
+                input_features = np.array([input_features])
+                
+
 
             ground_label_list = []
             for label in ground_label:
@@ -145,7 +142,7 @@ class LstmModel():
         # self.logger.info("- dev acc {:04.2f} - f1 {:04.2f}".format(100 * acc, 100 * f1))
         # return acc, f1
     
-    def train(self, train_data, dev_data):
+    def train(self, train_data, dev_data, test_data):
         saver = tf.train.Saver()
         
         best_score = 0
@@ -162,7 +159,7 @@ class LstmModel():
             for epoch in range(self.config.num_epochs):
                 self.logger.info("Epoch {:} out of {:}".format(epoch + 1, self.config.num_epochs))
                 # acc, f1 = self.run_epoch(sess, train, dev, ground_labels, utter_embed, epoch)
-                self.run_epoch(sess, train_data, dev_data, epoch)
+                self.run_epoch(sess, train_data, dev_data, test_data, epoch)
                 
                 # decay learning rate
                 self.config.lr *= self.config.lr_decay
