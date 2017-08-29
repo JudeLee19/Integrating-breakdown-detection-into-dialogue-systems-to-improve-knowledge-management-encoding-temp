@@ -10,12 +10,12 @@ class Config():
 
         self.logger = get_logger(self.log_path)
         
-    # output_path = 'results/word2vec_lstm_v4/'
-    # model_output = output_path + 'model.weights_v4/'
+    # output_path = 'results/word2vec_lstm_v5/'
+    # model_output = output_path + 'model.weights_v5/'
     # log_path = output_path + "log_v4.txt"
 
-    output_path = 'results/word2vec_cnn_v2/'
-    model_output = output_path + 'model.weights_v2/'
+    output_path = 'results/word2vec_cnn_v3/'
+    model_output = output_path + 'model.weights_v3/'
     log_path = output_path + "log_v2.txt"
     
     lr = 0.001

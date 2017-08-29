@@ -4,6 +4,7 @@ from general_utils import Progbar, print_sentence
 from tensorflow.contrib.layers import xavier_initializer as xav
 from data_process import minibatches
 import joblib
+import os
 
 
 class LstmModel():
@@ -32,13 +33,10 @@ class LstmModel():
             reshaped_features = tf.transpose(self.input_features, [1, 0, 2])
             print('reshaped_features: ', reshaped_features.shape)
             reshaped_features = tf.reshape(reshaped_features, [-1, self.input_size])
-            # print('reshaped_features: ', reshaped_features.shape)
             
             proj_input_features = tf.matmul(reshaped_features, W_i) + b_i
-            # print('proj_input_features: ', proj_input_features)
 
             proj_input_features = tf.split(proj_input_features, 10, 0)
-            # print('split proj_input_features: ', proj_input_features)
             
             # define lstm cell
             lstm_fw = tf.contrib.rnn.LSTMCell(self.num_hidden, state_is_tuple=True)
@@ -47,8 +45,6 @@ class LstmModel():
 
             outputs = tf.transpose(outputs, [1, 0, 2])
             outputs = tf.reshape(outputs, [-1, self.num_hidden])
-            # print('outputs shape')
-            # print(outputs.shape)
             
         with tf.variable_scope('output_projection'):
             W_o = tf.get_variable('Wo', [self.num_hidden, self.num_classes],
@@ -58,7 +54,6 @@ class LstmModel():
             
             self.logits = tf.matmul(outputs, W_o) + b_o
             self.logits = tf.expand_dims(self.logits, 0)
-            print('output logits: ',self.logits.shape)
         
     def add_pred_op(self):
         self.labels_pred = tf.cast(tf.argmax(self.logits, axis=-1), tf.int32)
@@ -111,17 +106,13 @@ class LstmModel():
                 user_sentence = each_utter_list[0]
                 system_sentence = each_utter_list[1]
                 
-                if self.config.embed_method == 'word2vec':
-                    user_embedding = self.utter_embed.embed_utterance(user_sentence)
-                    system_embedding = self.utter_embed.embed_utterance(system_sentence)
-                    input_feature = np.concatenate((user_embedding, system_embedding), axis=0)
-                    input_features.append(input_feature)
-              
-            if self.config.embed_method == 'word2vec':
-                input_features = np.array([input_features])
-                
-
-
+                user_embedding = self.utter_embed.embed_utterance(user_sentence, is_mean=True)
+                system_embedding = self.utter_embed.embed_utterance(system_sentence, is_mean=True)
+                input_feature = np.concatenate((user_embedding, system_embedding), axis=0)
+                input_features.append(input_feature)
+            
+            input_features = np.array([input_features])
+            
             ground_label_list = []
             for label in ground_label:
                 ground_label_list.append(self.cate_mapping_dict[label.strip().encode('utf-8')])
@@ -138,10 +129,64 @@ class LstmModel():
             if i % 10 == 0:
                 self.file_writer.add_summary(summary, epoch * num_batches + i)
 
-        # acc, f1 = self.run_evaluate(sess, dev_data, ground_label_idx)
-        # self.logger.info("- dev acc {:04.2f} - f1 {:04.2f}".format(100 * acc, 100 * f1))
-        # return acc, f1
+        accuracy, f1_score = self.run_evaluate(sess, test_data[300:])
+        self.logger.info("- dev acc {:04.2f} - f1 {:04.2f}".format(100 * accuracy, 100 * f1_score))
+        return accuracy, f1_score
     
+    def run_evaluate(self, sess, test_data):
+        confusion_matrix = np.zeros(shape=(3, 3))
+
+        accuracy_list = []
+        for i, (concat_utter_list, ground_label) in enumerate(minibatches(test_data, self.config.batch_size)):
+            input_features = []
+            for each_utter_list in concat_utter_list:
+                user_sentence = each_utter_list[0]
+                system_sentence = each_utter_list[1]
+                user_embedding = self.utter_embed.embed_utterance(user_sentence)
+                system_embedding = self.utter_embed.embed_utterance(system_sentence)
+                input_feature = np.concatenate((user_embedding, system_embedding), axis=0)
+                input_features.append(input_feature)
+            
+            input_features = np.array([input_features])
+
+            ground_label_list = []
+            for label in ground_label:
+                ground_label_list.append(self.cate_mapping_dict[label.strip().encode('utf-8')])
+            ground_label_list = np.array([ground_label_list])
+
+            feed_dict = {
+                self.input_features: input_features
+            }
+
+            labels_pred = sess.run([self.labels_pred], feed_dict=feed_dict)
+
+            predict_list = list(labels_pred)[0][0]
+            ground_list = ground_label_list[0]
+
+            correct_pred = 0.
+            for pred_ele, ground_ele in zip(predict_list, ground_list):
+                confusion_matrix[pred_ele][ground_ele] += 1
+                if pred_ele == ground_ele:
+                    correct_pred += 1
+                else:
+                    continue
+            accuracy_list.append(correct_pred / len(ground_list))
+        accuracy = np.mean(accuracy_list)
+
+        tp = 0.
+        fp = 0.
+        fn = 0.
+        for i in range(3):
+            tp += confusion_matrix[i][i]
+            fp += (sum(confusion_matrix[:][i]) - confusion_matrix[i][i])
+            fn += (sum(confusion_matrix[i][:]) - confusion_matrix[i][i])
+        
+        precision = tp / (tp + fp)
+        recall = tp / (tp + fn)
+        f1_score = (2 * precision * recall) / (precision + recall)
+        
+        return accuracy, f1_score
+            
     def train(self, train_data, dev_data, test_data):
         saver = tf.train.Saver()
         
@@ -158,12 +203,25 @@ class LstmModel():
             
             for epoch in range(self.config.num_epochs):
                 self.logger.info("Epoch {:} out of {:}".format(epoch + 1, self.config.num_epochs))
-                # acc, f1 = self.run_epoch(sess, train, dev, ground_labels, utter_embed, epoch)
-                self.run_epoch(sess, train_data, dev_data, test_data, epoch)
+                accuracy, f1_score = self.run_epoch(sess, train_data, dev_data, test_data, epoch)
                 
                 # decay learning rate
                 self.config.lr *= self.config.lr_decay
                 
                 # need to add early stopping
+                
+                if f1_score >= best_score:
+                    nepoch_no_imprv = 0
+                    if not os.path.exists(self.config.model_output):
+                        os.makedirs(self.config.model_output)
+                    saver.save(sess, self.config.model_output)
+                    best_score = f1_score
+                    self.logger.info("- new best score!")
 
-            saver.save(sess, self.config.model_output)
+                else:
+                    nepoch_no_imprv += 1
+                    if nepoch_no_imprv >= self.config.nepoch_no_imprv:
+                        self.logger.info("- early stopping {} epochs without improvement".format(
+                                        nepoch_no_imprv))
+                        break
+                        

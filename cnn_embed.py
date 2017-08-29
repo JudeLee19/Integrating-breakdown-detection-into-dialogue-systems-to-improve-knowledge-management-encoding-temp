@@ -6,6 +6,7 @@ from data_process import minibatches
 import joblib
 import os
 
+
 class CnnLstmModel():
     
     def __init__(self, num_rnn_hidden, num_classes, utter_embed,
@@ -25,7 +26,6 @@ class CnnLstmModel():
         self.config = config
         
         self.cate_mapping_dict = joblib.load('./dbdc3/data/cate_mapping_dict')
-        
         
     def add_placeholders(self):
         """
@@ -194,7 +194,7 @@ class CnnLstmModel():
         prog = Progbar(target=num_batches)
     
         for i, (concat_utter_list, ground_label) in enumerate(
-                minibatches(train_data + dev_data + test_data[:300], self.config.batch_size)):
+                minibatches(train_data + dev_data + test_data[:100], self.config.batch_size)):
             
             input_features = []
             for each_utter_list in concat_utter_list:
@@ -230,10 +230,19 @@ class CnnLstmModel():
         
             if i % 10 == 0:
                 self.file_writer.add_summary(summary, epoch * num_batches + i)
-        
-        accuracy, f1_score = self.run_evaluate(sess, test_data[300:])
-        self.logger.info("- dev acc {:04.2f} - f1 {:04.2f}".format(100 * accuracy, 100 * f1_score))
-        return accuracy, f1_score
+
+        accuracy, precision_X, recall_X, f1_score_X, precision_T, recall_T, f1_score_T = self.run_evaluate(sess, test_data[100:])
+        self.logger.info("accuracy : {:f}".format(accuracy))
+        self.logger.info("precision_X : {:f}".format(precision_X))
+        self.logger.info("recall_X : {:f}".format(recall_X))
+        self.logger.info("f1_score_X : {:f}".format(f1_score_X))
+
+        self.logger.info("precision X + T : {:f}".format(precision_X + precision_T))
+        self.logger.info("recall X + T : {:f}".format(recall_X + recall_T))
+        self.logger.info("f1_score X + T : {:f}".format(f1_score_X + f1_score_T))
+        # self.logger.info("- dev acc {:04.2f} - f1 {:04.2f}".format(100 * accuracy, 100 * f1_score))
+        # self.logger.info("- test acc {:04.2f} - pre {:f} - recall {:0f}- f1 {:04.2f}".format(100 * accuracy, 100 * precision, 100 * recall, 100 * f1_score))
+        return accuracy, f1_score_X
         
     def run_evaluate(self, sess, test_data):
         # create confusion matrix to evaluate precision and recall
@@ -282,19 +291,30 @@ class CnnLstmModel():
                     continue
             accuracy_list.append(correct_pred / len(ground_list))
         accuracy = np.mean(accuracy_list)
+
         
-        tp = 0.
-        fp = 0.
-        fn = 0.
-        for i in range(3):
-            tp += confusion_matrix[i][i]
-            fp += (sum(confusion_matrix[:][i]) - confusion_matrix[i][i])
-            fn += (sum(confusion_matrix[i][:]) - confusion_matrix[i][i])
-        precision = tp / (tp + fp)
-        recall = tp / (tp + fn)
-        f1_score = (2 * precision * recall) / (precision + recall)
+        # O : Not a breakdown, T : Possible breakdown, X : Breakdown
+        tp_O = confusion_matrix[0][0]
+        tp_X = confusion_matrix[1][1]
+        tp_T = confusion_matrix[2][2]
         
-        return accuracy, f1_score
+        fp_O = (sum(confusion_matrix[:][0]) - confusion_matrix[0][0])
+        fp_X = (sum(confusion_matrix[:][1]) - confusion_matrix[1][1])
+        fp_T = (sum(confusion_matrix[:][2]) - confusion_matrix[2][2])
+        
+        fn_O = (sum(confusion_matrix[0][:]) - confusion_matrix[0][0])
+        fn_X = (sum(confusion_matrix[1][:]) - confusion_matrix[1][1])
+        fn_T = (sum(confusion_matrix[2][:]) - confusion_matrix[2][2])
+        
+        precision_X = tp_X / (tp_X + fp_X)
+        recall_X = tp_X / (tp_X + fn_X)
+        f1_score_X = (2 * precision_X * recall_X) / (precision_X + recall_X)
+
+        precision_T = tp_T / (tp_T + fp_T)
+        recall_T = tp_T / (tp_T + fn_T)
+        f1_score_T = (2 * precision_T * recall_T) / (precision_T + recall_T)
+        
+        return accuracy, precision_X, recall_X, f1_score_X, precision_T, recall_T, f1_score_T
     
     def train(self, train_data, dev_data, test_data):
         saver = tf.train.Saver()
