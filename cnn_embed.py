@@ -152,8 +152,10 @@ class CnnLstmModel():
         self.labels_pred = tf.cast(tf.argmax(self.logits, axis=-1), tf.int32)
 
     def add_loss_op(self):
-        losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.ground_label)
-        self.loss = tf.reduce_mean(losses)
+        # 0.344 : 0.495 : 0.161
+        classes_weights = tf.constant([0.346, 0.495, 0.161])
+        cross_entropy = tf.nn.weighted_cross_entropy_with_logits(logits=self.logits, targets=tf.one_hot(self.ground_label, depth=3), pos_weight=classes_weights)
+        self.loss = tf.reduce_mean(cross_entropy)
     
         tf.summary.scalar('loss', self.loss)
 
@@ -194,7 +196,7 @@ class CnnLstmModel():
         prog = Progbar(target=num_batches)
     
         for i, (concat_utter_list, ground_label) in enumerate(
-                minibatches(train_data + dev_data + test_data[:100], self.config.batch_size)):
+                minibatches(train_data + dev_data + test_data[:300], self.config.batch_size)):
             
             input_features = []
             for each_utter_list in concat_utter_list:
@@ -217,7 +219,7 @@ class CnnLstmModel():
                 ground_label_list.append(self.cate_mapping_dict[label.strip().encode('utf-8')])
             ground_label_list = np.array([ground_label_list])
 
-            dropout_keep_prob = 0.8
+            dropout_keep_prob = 0.5
             
             feed_dict = {
                 self.input_x: input_x,
@@ -231,17 +233,18 @@ class CnnLstmModel():
             if i % 10 == 0:
                 self.file_writer.add_summary(summary, epoch * num_batches + i)
 
-        accuracy, precision_X, recall_X, f1_score_X, precision_T, recall_T, f1_score_T = self.run_evaluate(sess, test_data[100:])
+        accuracy, precision_X, recall_X, f1_score_X, precision_B_T, recall_B_T, f1_score_B_T = self.run_evaluate(sess,
+                                                                                                                 test_data[
+                                                                                                                 300:])
         self.logger.info("accuracy : {:f}".format(accuracy))
         self.logger.info("precision_X : {:f}".format(precision_X))
         self.logger.info("recall_X : {:f}".format(recall_X))
         self.logger.info("f1_score_X : {:f}".format(f1_score_X))
 
-        self.logger.info("precision X + T : {:f}".format(precision_X + precision_T))
-        self.logger.info("recall X + T : {:f}".format(recall_X + recall_T))
-        self.logger.info("f1_score X + T : {:f}".format(f1_score_X + f1_score_T))
-        # self.logger.info("- dev acc {:04.2f} - f1 {:04.2f}".format(100 * accuracy, 100 * f1_score))
-        # self.logger.info("- test acc {:04.2f} - pre {:f} - recall {:0f}- f1 {:04.2f}".format(100 * accuracy, 100 * precision, 100 * recall, 100 * f1_score))
+        self.logger.info("precision X + T : {:f}".format(precision_B_T))
+        self.logger.info("recall X + T : {:f}".format(recall_B_T))
+        self.logger.info("f1_score X + T : {:f}".format(f1_score_B_T))
+        
         return accuracy, f1_score_X
         
     def run_evaluate(self, sess, test_data):
@@ -292,29 +295,29 @@ class CnnLstmModel():
             accuracy_list.append(correct_pred / len(ground_list))
         accuracy = np.mean(accuracy_list)
 
-        
         # O : Not a breakdown, T : Possible breakdown, X : Breakdown
         tp_O = confusion_matrix[0][0]
         tp_X = confusion_matrix[1][1]
         tp_T = confusion_matrix[2][2]
-        
+
+
         fp_O = (sum(confusion_matrix[:][0]) - confusion_matrix[0][0])
         fp_X = (sum(confusion_matrix[:][1]) - confusion_matrix[1][1])
         fp_T = (sum(confusion_matrix[:][2]) - confusion_matrix[2][2])
-        
+
         fn_O = (sum(confusion_matrix[0][:]) - confusion_matrix[0][0])
         fn_X = (sum(confusion_matrix[1][:]) - confusion_matrix[1][1])
         fn_T = (sum(confusion_matrix[2][:]) - confusion_matrix[2][2])
-        
+
         precision_X = tp_X / (tp_X + fp_X)
         recall_X = tp_X / (tp_X + fn_X)
         f1_score_X = (2 * precision_X * recall_X) / (precision_X + recall_X)
 
-        precision_T = tp_T / (tp_T + fp_T)
-        recall_T = tp_T / (tp_T + fn_T)
-        f1_score_T = (2 * precision_T * recall_T) / (precision_T + recall_T)
-        
-        return accuracy, precision_X, recall_X, f1_score_X, precision_T, recall_T, f1_score_T
+        precision_B_T = (tp_X + tp_T) / ((tp_X + fp_X) + (tp_T + fp_T))
+        recall_B_T = (tp_T + tp_X) / ((tp_T + fn_T) + (tp_X + fn_X))
+        f1_score_B_T = (2 * precision_B_T * recall_B_T) / (precision_B_T + recall_B_T)
+
+        return accuracy, precision_X, recall_X, f1_score_X, precision_B_T, recall_B_T, f1_score_B_T
     
     def train(self, train_data, dev_data, test_data):
         saver = tf.train.Saver()
