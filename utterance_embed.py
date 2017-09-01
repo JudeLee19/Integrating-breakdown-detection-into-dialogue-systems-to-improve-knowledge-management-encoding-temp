@@ -40,3 +40,12 @@ class UtteranceEmbed():
         
     def get_vector_size(self):
         return self.word2vec_model.vector_size
+    
+    
+    # mrrm slrk szheld cjswosi????????
+    # slro aqkqhsi?!@
+    # skfkd Tkdnwk
+    
+    
+    
+    

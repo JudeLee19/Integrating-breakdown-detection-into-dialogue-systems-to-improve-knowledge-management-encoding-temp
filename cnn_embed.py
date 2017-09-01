@@ -74,9 +74,6 @@ class CnnLstmModel():
                         padding="VALID",
                         name="conv")
                     
-                    # print('conv shape')
-                    # print(conv.shape)
-                    
                     # Apply nonlinearity
                     h = tf.nn.relu(tf.nn.bias_add(conv, b), name="relu")
                     # Maxpooling over the outputs
@@ -87,15 +84,8 @@ class CnnLstmModel():
                         padding='VALID',
                         name="pool")
 
-                    # print('pooled shape')
-                    # print(pooled.shape)
-                    # print('\n\n')
                     pooled_outputs.append(pooled)
 
-            # print('pooled_outputs shape')
-            # print(len(pooled_outputs))
-            # print(pooled_outputs[0].shape)
-            
             # Combine all the pooled features
             num_filters_total = self.num_filters * len(self.filter_sizes)
             self.h_pool = tf.concat(pooled_outputs, 3)
@@ -103,30 +93,26 @@ class CnnLstmModel():
             # Add dropout
             with tf.name_scope("dropout"):
                 self.h_drop = tf.nn.dropout(self.h_pool_flat, self.dropout_keep_prob)
-
-            # shape : (20, 384)
-            input_features = tf.reshape(self.h_drop, [10, 384 * 2])
+            
+            # shape : (20, 384) => (10, 384 * 2)
+            input_features = tf.reshape(self.h_drop, [10, int(self.h_drop.shape[1]) * 2])
+            # input_features = tf.reshape(self.h_drop, [10, 384 * 2])
             self.input_features = tf.expand_dims(input_features, 0)
             
         with tf.variable_scope('lstm'):
             # need to change input_size to user and system concatenated h_pool_flat dimension.
 
-            rnn_input_size = 384 * 2
+            rnn_input_size = int(self.h_drop.shape[1] * 2)
+            # rnn_input_size = 384 * 2
             
             W_i = tf.get_variable('W_i', [rnn_input_size, self.num_hidden], initializer=xav())
             b_i = tf.get_variable('b_i', [self.num_hidden], initializer=tf.constant_initializer(0.))
         
             reshaped_features = tf.transpose(self.input_features, [1, 0, 2])
-            # print(type(reshaped_features))
-            # print('reshaped_features: ', reshaped_features.shape)
             reshaped_features = tf.reshape(reshaped_features, [-1, rnn_input_size])
-            # print('reshaped_features: ', reshaped_features.shape)
         
             proj_input_features = tf.matmul(reshaped_features, W_i) + b_i
-            # print('proj_input_features: ', proj_input_features)
-        
             proj_input_features = tf.split(proj_input_features, 10, 0)
-            # print('split proj_input_features: ', proj_input_features)
         
             # define lstm cell
             lstm_fw = tf.contrib.rnn.LSTMCell(self.num_hidden, state_is_tuple=True)
@@ -135,9 +121,7 @@ class CnnLstmModel():
         
             outputs = tf.transpose(outputs, [1, 0, 2])
             outputs = tf.reshape(outputs, [-1, self.num_hidden])
-            # print('outputs shape')
-            # print(outputs.shape)
-    
+        
         with tf.variable_scope('output_projection'):
             W_o = tf.get_variable('Wo', [self.num_hidden, self.num_classes],
                                   initializer=xav())
@@ -146,8 +130,7 @@ class CnnLstmModel():
         
             self.logits = tf.matmul(outputs, W_o) + b_o
             self.logits = tf.expand_dims(self.logits, 0)
-            # print('output logits: ', self.logits.shape)
-
+        
     def add_pred_op(self):
         self.labels_pred = tf.cast(tf.argmax(self.logits, axis=-1), tf.int32)
 
@@ -219,7 +202,7 @@ class CnnLstmModel():
                 ground_label_list.append(self.cate_mapping_dict[label.strip().encode('utf-8')])
             ground_label_list = np.array([ground_label_list])
 
-            dropout_keep_prob = 0.5
+            dropout_keep_prob = 0.8
             
             feed_dict = {
                 self.input_x: input_x,
@@ -355,4 +338,22 @@ class CnnLstmModel():
                         self.logger.info("- early stopping {} epochs without improvement".format(
                                         nepoch_no_imprv))
                         break
-        
+    
+    def evaluate(self, test_data):
+        saver = tf.train.Saver()
+        with tf.Session() as sess:
+            self.logger.info('Evaulating Model')
+            saver.restore(sess, self.config.model_output)
+            
+            accuracy, precision_X, recall_X, f1_score_X, precision_B_T, recall_B_T, f1_score_B_T = self.run_evaluate(
+                sess,
+                test_data[
+                300:])
+            self.logger.info("accuracy : {:f}".format(accuracy))
+            self.logger.info("precision_X : {:f}".format(precision_X))
+            self.logger.info("recall_X : {:f}".format(recall_X))
+            self.logger.info("f1_score_X : {:f}".format(f1_score_X))
+
+            self.logger.info("precision X + T : {:f}".format(precision_B_T))
+            self.logger.info("recall X + T : {:f}".format(recall_B_T))
+            self.logger.info("f1_score X + T : {:f}".format(f1_score_B_T))

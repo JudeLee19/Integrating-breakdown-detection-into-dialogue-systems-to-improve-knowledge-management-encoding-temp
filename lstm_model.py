@@ -63,7 +63,6 @@ class LstmModel():
         cross_entropy = tf.nn.weighted_cross_entropy_with_logits(logits=self.logits,
                                                                  targets=tf.one_hot(self.ground_label, depth=3),
                                                                  pos_weight=classes_weights)
-        # losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.ground_label)
         self.loss = tf.reduce_mean(cross_entropy)
         
         tf.summary.scalar('loss', self.loss)
@@ -248,4 +247,22 @@ class LstmModel():
                         self.logger.info("- early stopping {} epochs without improvement".format(
                                         nepoch_no_imprv))
                         break
-                        
+
+    def evaluate(self, test_data):
+        saver = tf.train.Saver()
+        with tf.Session() as sess:
+            self.logger.info('Evaulating Model')
+            saver.restore(sess, self.config.model_output)
+        
+            accuracy, precision_X, recall_X, f1_score_X, precision_B_T, recall_B_T, f1_score_B_T = self.run_evaluate(
+                sess,
+                test_data[
+                300:])
+            self.logger.info("accuracy : {:f}".format(accuracy))
+            self.logger.info("precision_X : {:f}".format(precision_X))
+            self.logger.info("recall_X : {:f}".format(recall_X))
+            self.logger.info("f1_score_X : {:f}".format(f1_score_X))
+        
+            self.logger.info("precision X + T : {:f}".format(precision_B_T))
+            self.logger.info("recall X + T : {:f}".format(recall_B_T))
+            self.logger.info("f1_score X + T : {:f}".format(f1_score_B_T))
