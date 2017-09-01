@@ -9,11 +9,12 @@ import os
 
 class LstmModel():
     
-    def __init__(self, input_size, num_hidden, num_classes, utter_embed, config):
+    def __init__(self, input_size, num_hidden, num_classes, utter_embed, bow_utter_embed, config):
         self.input_size = input_size
         self.num_hidden = num_hidden
         self.num_classes = num_classes
         self.utter_embed = utter_embed
+        self.bow_utter_embed = bow_utter_embed
         self.logger = config.logger
         self.config = config
         
@@ -22,6 +23,7 @@ class LstmModel():
     def add_placeholders(self):
         # (batch_size, n_steps(10 utterance turn), input_size)
         self.input_features = tf.placeholder(tf.float32, [1, 10, self.input_size], name='input_features')
+        
         # (batch_size, n_steps)
         self.ground_label = tf.placeholder(tf.int32, [1, 10], name='ground_label')
     
@@ -111,7 +113,10 @@ class LstmModel():
                 
                 user_embedding = self.utter_embed.embed_utterance(user_sentence, is_mean=True)
                 system_embedding = self.utter_embed.embed_utterance(system_sentence, is_mean=True)
-                input_feature = np.concatenate((user_embedding, system_embedding), axis=0)
+                
+                bow_embedding = self.bow_utter_embed.embed_utterance(user_sentence + ' ' + system_sentence)
+                input_feature = np.concatenate((user_embedding, system_embedding, bow_embedding), axis=0)
+                # input_feature = np.concatenate((user_embedding, system_embedding), axis=0)
                 input_features.append(input_feature)
             
             input_features = np.array([input_features])
@@ -158,7 +163,10 @@ class LstmModel():
                 system_sentence = each_utter_list[1]
                 user_embedding = self.utter_embed.embed_utterance(user_sentence)
                 system_embedding = self.utter_embed.embed_utterance(system_sentence)
-                input_feature = np.concatenate((user_embedding, system_embedding), axis=0)
+
+                bow_embedding = self.bow_utter_embed.embed_utterance(user_sentence + ' ' + system_sentence)
+                input_feature = np.concatenate((user_embedding, system_embedding, bow_embedding), axis=0)
+                # input_feature = np.concatenate((user_embedding, system_embedding), axis=0)
                 input_features.append(input_feature)
             
             input_features = np.array([input_features])

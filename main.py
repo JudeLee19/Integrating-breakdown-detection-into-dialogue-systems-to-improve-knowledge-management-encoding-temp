@@ -4,6 +4,8 @@ from data_process import Data
 from utterance_embed import UtteranceEmbed
 from cnn_embed import CnnLstmModel
 import tensorflow as tf
+from bow import BowEmbed
+
 
 tf.flags.DEFINE_boolean('train', True, 'if true train, if not evaluate')
 tf.flags.DEFINE_boolean('reload', False, 'reload')
@@ -27,7 +29,10 @@ def main(config):
     # load word2vec
     utter_embed = UtteranceEmbed('dbdc3/data/word2vec/wiki_en_model')
     
-    input_size = (utter_embed.get_vector_size() * 2)
+    # load bow
+    bow_utter_embed = BowEmbed(train_data, dev_data, test_data)
+    
+    input_size = (utter_embed.get_vector_size() * 2) + bow_utter_embed.get_vocab_size()
     num_classes = 3
     
     config.reload = FLAGS.reload
@@ -39,7 +44,7 @@ def main(config):
     
     if config.embed_method == 'word2vec':
         num_hideen = FLAGS.num_hidden
-        model = LstmModel(input_size, num_hideen, num_classes, utter_embed, config)
+        model = LstmModel(input_size, num_hideen, num_classes, utter_embed, bow_utter_embed, config)
         model.build()
 
     elif config.embed_method == 'cnn':
